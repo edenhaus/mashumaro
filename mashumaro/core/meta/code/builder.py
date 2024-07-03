@@ -22,6 +22,7 @@ import typing_extensions
 from mashumaro.config import (
     ADD_DIALECT_SUPPORT,
     ADD_SERIALIZATION_CONTEXT,
+    ADD_DESERIALIZATION_CONTEXT,
     TO_DICT_ADD_BY_ALIAS_FLAG,
     TO_DICT_ADD_OMIT_NONE_FLAG,
     BaseConfig,
@@ -419,7 +420,12 @@ class CodeBuilder:
                         "Callable[[Dict[Any, Any]], Dict[Any, Any]] signature"
                     )
                 else:
-                    self.add_line(f"d = cls.{__PRE_DESERIALIZE__}(d)")
+                    pre_deserialize_args = ["d"]
+                    if self.is_code_generation_option_enabled(
+                        ADD_DESERIALIZATION_CONTEXT
+                    ):
+                        pre_deserialize_args.append("context=context")
+                    self.add_line(f"d = cls.{__PRE_DESERIALIZE__}({', '.join(pre_deserialize_args)})")
             post_deserialize = self.get_declared_hook(__POST_DESERIALIZE__)
             if post_deserialize:
                 if not isinstance(post_deserialize, classmethod):
@@ -530,7 +536,12 @@ class CodeBuilder:
             cls_inst = f"cls({', '.join(args)})"
 
             if post_deserialize:
-                self.add_line(f"return cls.{__POST_DESERIALIZE__}({cls_inst})")
+                post_deserialize_args = [cls_inst]
+                if self.is_code_generation_option_enabled(
+                    ADD_DESERIALIZATION_CONTEXT
+                ):
+                    post_deserialize_args.append("context=context")
+                self.add_line(f"return cls.{__POST_DESERIALIZE__}({', '.join(post_deserialize_args)})")
             else:
                 self.add_line(f"return {cls_inst}")
 
@@ -666,7 +677,7 @@ class CodeBuilder:
         pluggable_flags = []
         if pass_decoder and self.decoder is not None:
             pluggable_flags.append("decoder=decoder")
-        for option, flag in ((ADD_DIALECT_SUPPORT, "dialect"),):
+        for option, flag in ((ADD_DIALECT_SUPPORT, "dialect"),(ADD_DESERIALIZATION_CONTEXT, "context"),):
             if self.is_code_generation_option_enabled(option, cls):
                 if self.is_code_generation_option_enabled(option):
                     pluggable_flags.append(f"{flag}={flag}")
@@ -748,6 +759,13 @@ class CodeBuilder:
 
         kw_param_names.append("dialect")
         kw_param_values.append("None")
+
+        context_feature = self.is_code_generation_option_enabled(
+            ADD_DESERIALIZATION_CONTEXT, cls
+        )
+        if context_feature:
+            kw_param_names.append("context")
+            kw_param_values.append("None")
 
         if pos_param_names:
             pluggable_flags_str = ", ".join(
